@@ -1,14 +1,47 @@
 import os
 import hashlib
 import json
-from datetime import datetime
+import logging
+import time
+from datetime import datetime, timezone
 
 import anthropic
+
+
+# ----------------------------
+# STRUCTURED LOGGER SETUP
+# ----------------------------
+class _JsonFormatter(logging.Formatter):
+    def format(self, record):
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "level": record.levelname,
+            "step": record.getMessage(),
+        }
+        if hasattr(record, "data"):
+            entry["data"] = record.data
+        return json.dumps(entry)
+
+
+def _setup_logger():
+    os.makedirs("logs", exist_ok=True)
+    logger = logging.getLogger("pipeline")
+    logger.setLevel(logging.DEBUG)
+    if not logger.handlers:
+        handler = logging.FileHandler("logs/agent_execution.log")
+        handler.setFormatter(_JsonFormatter())
+        logger.addHandler(handler)
+    return logger
+
+
+logger = _setup_logger()
 
 # ----------------------------
 # 1. INGESTION
 # ----------------------------
 def ingest_evidence(path):
+    logger.info("ingest_start", extra={"data": {"path": path}})
+    t0 = time.monotonic()
     evidence_files = []
     for root, _, files in os.walk(path):
         for f in files:
@@ -21,6 +54,11 @@ def ingest_evidence(path):
                     "hash": hashlib.sha256(data).hexdigest(),
                     "size": len(data)
                 })
+    logger.info("ingest_complete", extra={"data": {
+        "file_count": len(evidence_files),
+        "total_bytes": sum(e["size"] for e in evidence_files),
+        "duration_s": round(time.monotonic() - t0, 3),
+    }})
     return evidence_files
 
 
@@ -28,6 +66,8 @@ def ingest_evidence(path):
 # 2. ARTIFACT EXTRACTION
 # ----------------------------
 def extract_artifacts(evidence):
+    logger.info("extract_start", extra={"data": {"file_count": len(evidence)}})
+    t0 = time.monotonic()
     artifacts = []
 
     for item in evidence:
@@ -43,6 +83,14 @@ def extract_artifacts(evidence):
         if "http://" in data.lower() or "https://" in data.lower():
             artifacts.append(("network_indicator", item["path"]))
 
+    by_type = {}
+    for atype, _ in artifacts:
+        by_type[atype] = by_type.get(atype, 0) + 1
+    logger.info("extract_complete", extra={"data": {
+        "artifact_count": len(artifacts),
+        "by_type": by_type,
+        "duration_s": round(time.monotonic() - t0, 3),
+    }})
     return artifacts
 
 
@@ -50,22 +98,31 @@ def extract_artifacts(evidence):
 # 3. TIMELINE NORMALIZATION
 # ----------------------------
 def normalize_timeline(artifacts):
+    logger.info("normalize_start", extra={"data": {"artifact_count": len(artifacts)}})
+    t0 = time.monotonic()
     timeline = []
 
     for i, (atype, source) in enumerate(artifacts):
         timeline.append({
-            "time": datetime.utcnow().isoformat(),
+            "time": datetime.now(timezone.utc).isoformat(),
             "event_type": atype,
             "source": source
         })
 
-    return sorted(timeline, key=lambda x: x["time"])
+    timeline = sorted(timeline, key=lambda x: x["time"])
+    logger.info("normalize_complete", extra={"data": {
+        "event_count": len(timeline),
+        "duration_s": round(time.monotonic() - t0, 3),
+    }})
+    return timeline
 
 
 # ----------------------------
 # 4. LLM REASONING
 # ----------------------------
 def llm_reason(timeline):
+    logger.info("llm_reason_start", extra={"data": {"event_count": len(timeline)}})
+    t0 = time.monotonic()
     client = anthropic.Anthropic()
 
     response = client.messages.create(
@@ -111,24 +168,42 @@ def llm_reason(timeline):
         }
     )
 
+    usage = response.usage
     text = next(b.text for b in response.content if b.type == "text")
-    return json.loads(text)["hypotheses"]
+    hypotheses = json.loads(text)["hypotheses"]
+    logger.info("llm_reason_complete", extra={"data": {
+        "hypothesis_count": len(hypotheses),
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+        "total_tokens": usage.input_tokens + usage.output_tokens,
+        "duration_s": round(time.monotonic() - t0, 3),
+    }})
+    return hypotheses
 
 
 # ----------------------------
 # 5. VERIFICATION LAYER (CRITICAL PART)
 # ----------------------------
 def verify_hypothesis(hypothesis):
-    # fake verification logic (replace with real checks later)
     required_keywords = ["powershell", "cmd", "http"]
 
     try:
         with open(hypothesis["support"], "r", errors="ignore") as f:
             content = f.read().lower()
 
-        return any(k in content for k in required_keywords)
+        result = any(k in content for k in required_keywords)
+        logger.info("verify_hypothesis", extra={"data": {
+            "claim": hypothesis["claim"],
+            "support": hypothesis["support"],
+            "verified": result,
+        }})
+        return result
 
-    except:
+    except Exception as exc:
+        logger.warning("verify_hypothesis_error", extra={"data": {
+            "support": hypothesis.get("support"),
+            "error": str(exc),
+        }})
         return False
 
 
@@ -136,6 +211,7 @@ def verify_hypothesis(hypothesis):
 # 6. REPORT GENERATION
 # ----------------------------
 def generate_report(verified):
+    logger.info("report_start", extra={"data": {"verified_count": len(verified)}})
     report = []
     report.append("=== FORENSIC REPORT ===\n")
 
@@ -148,6 +224,7 @@ def generate_report(verified):
     with open("report.txt", "w") as f:
         f.write(output)
 
+    logger.info("report_complete", extra={"data": {"output_path": "report.txt"}})
     print(output)
 
 
@@ -155,12 +232,18 @@ def generate_report(verified):
 # MAIN PIPELINE
 # ----------------------------
 def main():
+    t0 = time.monotonic()
+    logger.info("pipeline_start")
     evidence = ingest_evidence("evidence/")
     artifacts = extract_artifacts(evidence)
     timeline = normalize_timeline(artifacts)
     hypotheses = llm_reason(timeline)
     verified = [h for h in hypotheses if verify_hypothesis(h)]
     generate_report(verified)
+    logger.info("pipeline_complete", extra={"data": {
+        "verified_findings": len(verified),
+        "total_duration_s": round(time.monotonic() - t0, 3),
+    }})
 
 
 if __name__ == "__main__":

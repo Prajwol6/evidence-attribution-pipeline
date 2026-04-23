@@ -1,0 +1,22 @@
+{"timestamp": "2026-04-23T04:22:21.831625+00:00", "level": "INFO", "step": "pipeline_start"}
+{"timestamp": "2026-04-23T04:22:21.831761+00:00", "level": "INFO", "step": "ingest_start", "data": {"path": "evidence/"}}
+{"timestamp": "2026-04-23T04:22:21.832072+00:00", "level": "INFO", "step": "ingest_complete", "data": {"file_count": 1, "total_bytes": 51, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T04:22:21.832110+00:00", "level": "INFO", "step": "extract_start", "data": {"file_count": 1}}
+{"timestamp": "2026-04-23T04:22:21.832138+00:00", "level": "INFO", "step": "extract_complete", "data": {"artifact_count": 2, "by_type": {"suspicious_execution": 1, "network_indicator": 1}, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T04:22:21.832157+00:00", "level": "INFO", "step": "normalize_start", "data": {"artifact_count": 2}}
+{"timestamp": "2026-04-23T04:22:21.832182+00:00", "level": "INFO", "step": "normalize_complete", "data": {"event_count": 2, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T04:22:21.832197+00:00", "level": "INFO", "step": "llm_reason_start", "data": {"event_count": 2}}
+{"timestamp": "2026-04-23T04:23:23.321848+00:00", "level": "INFO", "step": "pipeline_start"}
+{"timestamp": "2026-04-23T04:23:23.321928+00:00", "level": "INFO", "step": "ingest_start", "data": {"path": "evidence/"}}
+{"timestamp": "2026-04-23T04:23:23.322039+00:00", "level": "INFO", "step": "ingest_complete", "data": {"file_count": 1, "total_bytes": 51, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T04:23:23.322065+00:00", "level": "INFO", "step": "extract_start", "data": {"file_count": 1}}
+{"timestamp": "2026-04-23T04:23:23.322088+00:00", "level": "INFO", "step": "extract_complete", "data": {"artifact_count": 2, "by_type": {"suspicious_execution": 1, "network_indicator": 1}, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T04:23:23.322106+00:00", "level": "INFO", "step": "normalize_start", "data": {"artifact_count": 2}}
+{"timestamp": "2026-04-23T04:23:23.322127+00:00", "level": "INFO", "step": "normalize_complete", "data": {"event_count": 2, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T04:23:23.322141+00:00", "level": "INFO", "step": "llm_reason_start", "data": {"event_count": 2}}
+{"timestamp": "2026-04-23T04:23:27.190511+00:00", "level": "INFO", "step": "llm_reason_complete", "data": {"hypothesis_count": 2, "input_tokens": 528, "output_tokens": 133, "total_tokens": 661, "duration_s": 3.868}}
+{"timestamp": "2026-04-23T04:23:27.190643+00:00", "level": "INFO", "step": "verify_hypothesis", "data": {"claim": "A suspicious process execution occurred which may indicate malware or unauthorized activity on the host.", "support": "evidence/test.log", "verified": true}}
+{"timestamp": "2026-04-23T04:23:27.190686+00:00", "level": "INFO", "step": "verify_hypothesis", "data": {"claim": "A network indicator was observed contemporaneously with the suspicious execution, suggesting possible C2 communication or data exfiltration initiated by the executed process.", "support": "evidence/test.log", "verified": true}}
+{"timestamp": "2026-04-23T04:23:27.190707+00:00", "level": "INFO", "step": "report_start", "data": {"verified_count": 2}}
+{"timestamp": "2026-04-23T04:23:27.192890+00:00", "level": "INFO", "step": "report_complete", "data": {"output_path": "report.txt"}}
+{"timestamp": "2026-04-23T04:23:27.192959+00:00", "level": "INFO", "step": "pipeline_complete", "data": {"verified_findings": 2, "total_duration_s": 3.871}}
