@@ -129,7 +129,70 @@ The layer succeeds at filtering hallucinated file paths but cannot catch interpr
 
 ---
 
-## 7. Summary Table
+## 7. Evidence Integrity
+
+### 7.1 Read-only access to evidence files
+
+`ingest_evidence()` opens every file exclusively in binary read mode (`open(full_path, "rb")`). The `"rb"` flag allows no write operations; any attempt to write through that handle raises `io.UnsupportedOperation` at the Python level before any kernel call is made.
+
+After ingestion the `evidence/` directory is never accessed again by the pipeline core. The remaining five stages operate entirely on in-memory data structures:
+
+| Stage | Input | Writes to disk? |
+|-------|-------|-----------------|
+| Ingestion | `evidence/` directory (read) | No |
+| Extraction | `evidence_files[]` in memory | No |
+| Normalization | `artifacts[]` in memory | No |
+| LLM reasoning | `timeline[]` in memory | No |
+| Verification | `verified[]` in memory + forensic CLI reads | No |
+| Report generation | `verified[]` in memory | `report.txt` only |
+
+The only disk writes in the entire pipeline are `logs/agent_execution.log` (appended by the `logging.FileHandler`) and `report.txt` (written by `generate_report()`). Neither path is inside `evidence/`.
+
+### 7.2 SHA-256 hash capture at ingestion
+
+At the moment each evidence file is read, `ingest_evidence()` computes a SHA-256 digest of the raw bytes and stores it alongside the file data:
+
+```python
+evidence_files.append({
+    "path":  full_path,
+    "data":  data,
+    "hash":  hashlib.sha256(data).hexdigest(),
+    "size":  len(data),
+})
+```
+
+This hash records the exact state of each file at ingestion time and is available for out-of-band comparison if tampering is suspected later. The digest is emitted in the `ingest_complete` structured log entry.
+
+**Limitation:** The hash is computed once and stored in `evidence_files[]`, but no subsequent stage re-verifies it. If an on-disk file were modified between `ingest_evidence()` and the `verify_hypothesis()` subprocess calls, the verification tools would silently read the modified file without detecting the discrepancy. A post-verification re-hash against the stored digest would close this gap.
+
+### 7.3 Verification-stage tools are read-only
+
+`verify_hypothesis()` invokes four CLI tools: `file`, `strings`, `grep -iEo`, and `xxd`. All four are read-only — none write to the files they inspect.
+
+Each tool call goes through `_run_tool()`, which uses `subprocess.run()` with `capture_output=True`. Standard output and standard error are captured as Python strings in memory; no file redirection is used, no shell is invoked, and the 30-second `timeout` ensures a hung subprocess cannot hold a file handle open indefinitely.
+
+The LLM (`llm_reason`) has no filesystem access. It receives a JSON-serialised timeline over the Anthropic API and returns JSON-serialised hypotheses; it cannot read, write, or delete files.
+
+### 7.4 What happens if the agent attempts to write to evidence files
+
+The pipeline provides no code path to write to anything under `evidence/`. An attempt to do so would have to overcome two independent guards:
+
+1. **Python `open()` mode** — `ingest_evidence()` uses `"rb"`. A write call on that handle raises `io.UnsupportedOperation: write` immediately, before any system call reaches the file.
+2. **No subsequent `open()` of evidence paths** — After ingestion, evidence file paths exist only as string values inside `source` fields of artifacts and timeline events. No pipeline stage calls `open()` on them again (the verification stage reaches them only through the read-only forensic tools).
+
+The subprocess commands in `_run_tool()` are passed as Python lists (`["grep", "-iEo", pattern, file_path]`), not shell strings, so the shell is never invoked. A `source` value containing shell metacharacters (e.g. from a maliciously crafted evidence filename) cannot produce arbitrary command execution via this path.
+
+### 7.5 In-memory data integrity and known limitations
+
+Once loaded, the raw bytes object (`item["data"]`) is never mutated. `extract_artifacts()` decodes it to text for keyword matching (`item["data"].decode(errors="ignore")`) but does not modify the original bytes.
+
+**Limitation — lossy text decoding:** The `errors="ignore"` flag silently drops bytes that cannot be decoded as UTF-8. The text representation used for heuristic matching can therefore differ from the byte content covered by the SHA-256 hash. For binary evidence (`.pcap`, `.zip`) this does not threaten the hash's integrity guarantee, but non-ASCII IOCs embedded in those files could be missed by the extractor while their bytes remain faithfully captured in `item["data"]`.
+
+**Limitation — hash not propagated through the audit trail:** The `hash` field recorded at ingestion is not threaded into `artifacts[]`, `timeline[]`, `hypotheses[]`, or `verified[]`. A report finding therefore cannot be mechanically traced back to the SHA-256 of the source file without manually correlating `ingest_complete` log entries. Propagating the hash through each stage-boundary data structure would provide an end-to-end chain of custody linking every finding to the exact byte state of the evidence file it came from.
+
+---
+
+## 8. Summary Table
 
 | Category | Count | Details |
 |----------|-------|---------|
@@ -144,7 +207,7 @@ The layer succeeds at filtering hallucinated file paths but cannot catch interpr
 
 ---
 
-## 8. Recommended Fixes by Priority
+## 9. Recommended Fixes by Priority
 
 1. **(Critical)** Fix timeline normalization — parse timestamps from evidence lines when present; use file modification time as fallback; never assign `datetime.now()` to all events in a batch.
 2. ~~**(Critical)** Extend credential extraction to cover `net user`, leet-speak password variants, and account-management commands (`useradd`, `passwd`).~~ **Done** — `net user` keyword added; emits `account_creation` artifact per line.
