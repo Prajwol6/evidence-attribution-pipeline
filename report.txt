@@ -1,7 +1,7 @@
 === FORENSIC REPORT ===
 
-- FINDING: A suspicious process execution occurred which may indicate malware or unauthorized activity on the host.
+- FINDING: Suspicious process execution may indicate malware activity on the host
   SOURCE: evidence/test.log
 
-- FINDING: A network indicator was observed contemporaneously with the suspicious execution, suggesting possible C2 communication or data exfiltration initiated by the executed process.
+- FINDING: Network indicator observed concurrently with suspicious execution suggests possible C2 communication or data exfiltration
   SOURCE: evidence/test.log

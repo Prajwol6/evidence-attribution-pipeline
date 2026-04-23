@@ -2,6 +2,7 @@ import os
 import hashlib
 import json
 import logging
+import subprocess
 import time
 from datetime import datetime, timezone
 
@@ -182,29 +183,86 @@ def llm_reason(timeline):
 
 
 # ----------------------------
-# 5. VERIFICATION LAYER (CRITICAL PART)
+# 5. VERIFICATION LAYER — SIFT forensic tool suite
 # ----------------------------
-def verify_hypothesis(hypothesis):
-    required_keywords = ["powershell", "cmd", "http"]
-
+def _run_tool(cmd, timeout=30):
+    """Run a forensic CLI tool, return (stdout, stderr, returncode)."""
     try:
-        with open(hypothesis["support"], "r", errors="ignore") as f:
-            content = f.read().lower()
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.stdout, r.stderr, r.returncode
+    except FileNotFoundError:
+        return "", f"tool not found: {cmd[0]}", 127
+    except subprocess.TimeoutExpired:
+        return "", "timeout", 1
 
-        result = any(k in content for k in required_keywords)
-        logger.info("verify_hypothesis", extra={"data": {
+
+def verify_hypothesis(hypothesis):
+    claim = hypothesis["claim"].lower()
+    source = hypothesis["support"]
+    tool_outputs = {}
+    evidence_found = []
+
+    # 1. file — identify the file type before deeper analysis
+    stdout, _, _ = _run_tool(["file", source])
+    tool_outputs["file"] = stdout.strip()
+
+    # 2. strings — pull printable sequences; catches IOCs in binaries too
+    stdout, _, _ = _run_tool(["strings", source])
+    tool_outputs["strings"] = stdout
+    strings_lower = stdout.lower()
+
+    ioc_keywords = [
+        "powershell", "cmd.exe", "cmd /", "/bin/sh", "/bin/bash",
+        "http://", "https://", "wget", "curl",
+        "password", "passwd", "credential", "secret",
+    ]
+    for kw in ioc_keywords:
+        if kw in strings_lower:
+            evidence_found.append(f"strings: found '{kw}'")
+
+    # 3. grep — targeted regex patterns keyed to the hypothesis claim
+    grep_patterns = []
+    if any(k in claim for k in ("execution", "powershell", "cmd", "process", "command", "script")):
+        grep_patterns += [r"powershell", r"cmd\.exe", r"cmd /[a-z]", r"/bin/(sh|bash)", r"\bexec\b"]
+    if any(k in claim for k in ("network", "c2", "exfiltration", "http", "communication", "beacon")):
+        grep_patterns += [r"https?://[^\s]+", r"\b\d{1,3}(\.\d{1,3}){3}\b(:\d+)?"]
+    if any(k in claim for k in ("credential", "password", "auth", "login")):
+        grep_patterns += [r"password\s*[:=]", r"passwd", r"secret\s*[:=]"]
+    if not grep_patterns:
+        grep_patterns = [r"powershell", r"cmd\.exe", r"https?://", r"password"]
+
+    grep_hits = []
+    for pattern in grep_patterns:
+        stdout, _, rc = _run_tool(["grep", "-iEo", pattern, source])
+        if rc == 0 and stdout.strip():
+            matches = list(dict.fromkeys(stdout.strip().splitlines()))  # dedupe
+            grep_hits.append({"pattern": pattern, "matches": matches})
+            evidence_found.append(f"grep '{pattern}': {matches}")
+    tool_outputs["grep"] = grep_hits
+
+    # 4. xxd — hex dump; useful for obfuscated or binary artifacts
+    stdout, _, _ = _run_tool(["xxd", source])
+    tool_outputs["xxd_head"] = stdout[:1024]
+
+    verified = len(evidence_found) > 0
+
+    logger.info("verify_hypothesis", extra={"data": {
+        "claim": hypothesis["claim"],
+        "support": source,
+        "file_type": tool_outputs["file"],
+        "grep_hits": len(grep_hits),
+        "evidence_found": evidence_found,
+        "verified": verified,
+    }})
+
+    if not verified:
+        logger.warning("verify_hypothesis_failed", extra={"data": {
             "claim": hypothesis["claim"],
-            "support": hypothesis["support"],
-            "verified": result,
+            "support": source,
+            "file_type": tool_outputs["file"],
         }})
-        return result
 
-    except Exception as exc:
-        logger.warning("verify_hypothesis_error", extra={"data": {
-            "support": hypothesis.get("support"),
-            "error": str(exc),
-        }})
-        return False
+    return verified
 
 
 # ----------------------------
