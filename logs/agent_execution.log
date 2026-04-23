@@ -97,3 +97,17 @@
 {"timestamp": "2026-04-23T16:56:21.255714+00:00", "level": "INFO", "step": "report_start", "data": {"verified_count": 4}}
 {"timestamp": "2026-04-23T16:56:21.256266+00:00", "level": "INFO", "step": "report_complete", "data": {"output_path": "report.txt"}}
 {"timestamp": "2026-04-23T16:56:21.256432+00:00", "level": "INFO", "step": "pipeline_complete", "data": {"verified_findings": 4, "total_duration_s": 4.507}}
+{"timestamp": "2026-04-23T17:00:59.255509+00:00", "level": "INFO", "step": "pipeline_start"}
+{"timestamp": "2026-04-23T17:00:59.256117+00:00", "level": "INFO", "step": "ingest_start", "data": {"path": "evidence/"}}
+{"timestamp": "2026-04-23T17:00:59.256410+00:00", "level": "INFO", "step": "ingest_complete", "data": {"file_count": 4, "total_bytes": 256, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T17:00:59.256456+00:00", "level": "INFO", "step": "extract_start", "data": {"file_count": 4}}
+{"timestamp": "2026-04-23T17:00:59.256500+00:00", "level": "INFO", "step": "extract_complete", "data": {"artifact_count": 4, "by_type": {"suspicious_execution": 2, "network_indicator": 2}, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T17:00:59.256546+00:00", "level": "INFO", "step": "normalize_start", "data": {"artifact_count": 4}}
+{"timestamp": "2026-04-23T17:00:59.256586+00:00", "level": "INFO", "step": "normalize_complete", "data": {"event_count": 4, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T17:00:59.256618+00:00", "level": "INFO", "step": "llm_reason_start", "data": {"event_count": 4}}
+{"timestamp": "2026-04-23T17:01:47.597193+00:00", "level": "INFO", "step": "ingest_start", "data": {"path": "evidence/"}}
+{"timestamp": "2026-04-23T17:01:47.597724+00:00", "level": "INFO", "step": "ingest_complete", "data": {"file_count": 4, "total_bytes": 256, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T17:01:47.597846+00:00", "level": "INFO", "step": "extract_start", "data": {"file_count": 4}}
+{"timestamp": "2026-04-23T17:01:47.597919+00:00", "level": "INFO", "step": "extract_complete", "data": {"artifact_count": 4, "by_type": {"suspicious_execution": 2, "network_indicator": 2}, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T17:01:47.597985+00:00", "level": "INFO", "step": "normalize_start", "data": {"artifact_count": 4}}
+{"timestamp": "2026-04-23T17:01:47.598093+00:00", "level": "INFO", "step": "normalize_complete", "data": {"event_count": 4, "duration_s": 0.0}}
