@@ -11,6 +11,25 @@ from datetime import datetime, timezone
 import anthropic
 
 
+# Extensions that identify disk images at ingestion time
+DISK_IMAGE_EXTS = frozenset({
+    ".dd", ".img", ".raw", ".e01", ".vmdk", ".vhd", ".vhdx", ".iso",
+})
+
+# File types worth pulling out of a disk image for analysis
+SUSPICIOUS_EXTS = frozenset({
+    ".ps1", ".bat", ".cmd", ".vbs", ".js", ".sh", ".py", ".rb", ".pl",  # scripts
+    ".exe", ".dll", ".sys", ".scr", ".com",                              # executables
+    ".zip", ".rar", ".7z", ".tar", ".gz", ".cab",                       # archives
+    ".log", ".evtx",                                                     # logs
+    ".docm", ".xlsm", ".pptm",                                          # macro-enabled Office
+    ".pcap", ".pcapng",                                                  # network captures
+})
+
+_EXTRACTED_DIR = "extracted"
+_MAX_FILES_PER_PARTITION = 100  # guard against images with thousands of matching files
+
+
 # ----------------------------
 # STRUCTURED LOGGER SETUP
 # ----------------------------
@@ -49,16 +68,39 @@ def ingest_evidence(path):
     for root, _, files in os.walk(path):
         for f in files:
             full_path = os.path.join(root, f)
-            with open(full_path, "rb") as file:
-                data = file.read()
+            ext = os.path.splitext(f)[1].lower()
+            if ext in DISK_IMAGE_EXTS:
+                # Stream the hash in chunks — disk images can be many gigabytes.
+                # Store only the first 512 bytes so magic-byte checks remain possible
+                # without loading the entire image into RAM.
+                sha = hashlib.sha256()
+                header = b""
+                with open(full_path, "rb") as fh:
+                    for chunk in iter(lambda: fh.read(65536), b""):
+                        sha.update(chunk)
+                        if not header:
+                            header = chunk[:512]
+                evidence_files.append({
+                    "path": full_path,
+                    "data": header,
+                    "hash": sha.hexdigest(),
+                    "size": os.path.getsize(full_path),
+                    "is_disk_image": True,
+                })
+            else:
+                with open(full_path, "rb") as file:
+                    data = file.read()
                 evidence_files.append({
                     "path": full_path,
                     "data": data,
                     "hash": hashlib.sha256(data).hexdigest(),
-                    "size": len(data)
+                    "size": len(data),
+                    "is_disk_image": False,
                 })
+    disk_image_count = sum(1 for e in evidence_files if e["is_disk_image"])
     logger.info("ingest_complete", extra={"data": {
         "file_count": len(evidence_files),
+        "disk_images": disk_image_count,
         "total_bytes": sum(e["size"] for e in evidence_files),
         "duration_s": round(time.monotonic() - t0, 3),
     }})
@@ -112,6 +154,10 @@ def extract_artifacts(evidence):
     artifacts = []
 
     for item in evidence:
+        if item.get("is_disk_image"):
+            artifacts.extend(extract_disk_image_artifacts(item))
+            continue
+
         data = item["data"].decode(errors="ignore")
 
         for lineno, line in enumerate(data.splitlines(), start=1):
@@ -140,6 +186,214 @@ def extract_artifacts(evidence):
         "artifact_count": len(artifacts),
         "by_type": by_type,
         "duration_s": round(time.monotonic() - t0, 3),
+    }})
+    return artifacts
+
+
+# ----------------------------
+# 2b. DISK IMAGE ARTIFACT EXTRACTION
+# ----------------------------
+def _parse_mmls(output):
+    """
+    Parse mmls partition-table output into a list of partition dicts.
+
+    Skips Meta and unallocated (---) rows; keeps only rows whose slot field
+    starts with a digit (e.g. "000", "000:000" for MBR, "002" for GPT).
+    """
+    partitions = []
+    for line in output.splitlines():
+        m = re.match(r"^\d+:\s+(\S+)\s+(\d+)\s+\d+\s+\d+\s+(.+)$", line.strip())
+        if not m:
+            continue
+        slot = m.group(1)
+        if not re.match(r"\d", slot):   # skip Meta, -------
+            continue
+        partitions.append({
+            "slot":        slot,
+            "start":       int(m.group(2)),
+            "description": m.group(3).strip(),
+        })
+    return partitions
+
+
+def _parse_fls(output):
+    """
+    Parse fls -r output into a list of file-entry dicts.
+
+    Handles both deleted-file notations used by different TSK versions:
+      r/r * 7:   path   (asterisk before inode)
+      r/r 7*:    path   (asterisk after inode)
+
+    Returns entries with keys: ftype, inode, path, deleted.
+    """
+    entries = []
+    for line in output.splitlines():
+        m = re.match(
+            r"^([drclsb\-])/[drclsb\-]\s+(\*\s+)?(\d+)(\*)?\s*:\s+(.+)$",
+            line.strip(),
+        )
+        if not m:
+            continue
+        entries.append({
+            "ftype":   m.group(1),
+            "inode":   int(m.group(3)),
+            "path":    m.group(5).strip(),
+            "deleted": (m.group(2) is not None) or (m.group(4) is not None),
+        })
+    return entries
+
+
+def extract_disk_image_artifacts(item):
+    """
+    Extract forensic artifacts from a disk image using mmls, fls, and icat.
+
+    Pipeline:
+      1. mmls  — list partitions and their byte offsets
+      2. fls -r — recursively enumerate files in each partition's filesystem
+      3. icat  — extract individual files by inode number
+
+    Suspicious files (matched by SUSPICIOUS_EXTS) are written to
+    extracted/<image_stem>/partition_<slot>/ so that the existing
+    verify_hypothesis() tools (file, strings, grep, xxd) work on them
+    without any changes. The source field in returned artifacts points to
+    those extracted paths, preserving the path:lineno convention used
+    throughout the rest of the pipeline.
+
+    Falls back to offset 0 if mmls cannot find a partition table (e.g. a
+    bare filesystem image with no partition wrapper).
+    """
+    image_path = item["path"]
+    image_stem = os.path.splitext(os.path.basename(image_path))[0]
+    artifacts = []
+
+    logger.info("disk_image_start", extra={"data": {
+        "image": image_path,
+        "size":  item["size"],
+        "hash":  item["hash"],
+    }})
+
+    # ── Step 1: partition table ────────────────────────────────────────────
+    stdout, stderr, rc = _run_tool(["mmls", image_path])
+    if rc != 0:
+        logger.warning("disk_image_mmls_failed", extra={"data": {
+            "image":      image_path,
+            "returncode": rc,
+            "stderr":     stderr.strip(),
+        }})
+        # Bare filesystem image — try the whole image as a single filesystem
+        partitions = [{"slot": "bare", "start": 0, "description": "no partition table"}]
+    else:
+        partitions = _parse_mmls(stdout)
+
+    if not partitions:
+        logger.warning("disk_image_no_partitions", extra={"data": {"image": image_path}})
+        return artifacts
+
+    logger.info("disk_image_partitions", extra={"data": {
+        "image":      image_path,
+        "count":      len(partitions),
+        "partitions": partitions,
+    }})
+
+    # ── Step 2: enumerate files in each partition ──────────────────────────
+    for partition in partitions:
+        offset      = partition["start"]
+        slot_label  = partition["slot"].replace(":", "_")
+        extract_dir = os.path.join(_EXTRACTED_DIR, image_stem, f"partition_{slot_label}")
+        os.makedirs(extract_dir, exist_ok=True)
+
+        stdout, stderr, rc = _run_tool(["fls", "-r", "-o", str(offset), image_path])
+        if rc != 0:
+            logger.warning("disk_image_fls_failed", extra={"data": {
+                "image":  image_path,
+                "slot":   partition["slot"],
+                "offset": offset,
+                "stderr": stderr.strip(),
+            }})
+            continue
+
+        all_entries = _parse_fls(stdout)
+        suspicious = [
+            e for e in all_entries
+            if e["ftype"] == "r"
+            and os.path.splitext(e["path"])[1].lower() in SUSPICIOUS_EXTS
+        ]
+
+        if len(suspicious) > _MAX_FILES_PER_PARTITION:
+            logger.warning("disk_image_file_limit_hit", extra={"data": {
+                "image":            image_path,
+                "slot":             partition["slot"],
+                "suspicious_found": len(suspicious),
+                "limit":            _MAX_FILES_PER_PARTITION,
+            }})
+            suspicious = suspicious[:_MAX_FILES_PER_PARTITION]
+
+        logger.info("disk_image_fls_complete", extra={"data": {
+            "image":           image_path,
+            "slot":            partition["slot"],
+            "offset":          offset,
+            "description":     partition["description"],
+            "total_entries":   len(all_entries),
+            "suspicious_count": len(suspicious),
+        }})
+
+        # ── Step 3: extract each suspicious file with icat ─────────────────
+        for entry in suspicious:
+            inode    = entry["inode"]
+            filename = os.path.basename(entry["path"].rstrip("/\\")) or f"inode_{inode}"
+            del_tag  = ".deleted" if entry["deleted"] else ""
+            extract_path = os.path.join(
+                extract_dir, f"inode_{inode}_{filename}{del_tag}"
+            )
+
+            file_bytes, stderr, rc = _run_tool_binary(
+                ["icat", "-o", str(offset), image_path, str(inode)]
+            )
+            if rc != 0 or not file_bytes:
+                logger.warning("disk_image_icat_failed", extra={"data": {
+                    "image":  image_path,
+                    "slot":   partition["slot"],
+                    "inode":  inode,
+                    "path":   entry["path"],
+                    "stderr": stderr.strip(),
+                }})
+                continue
+
+            with open(extract_path, "wb") as fh:
+                fh.write(file_bytes)
+
+            logger.info("disk_image_file_extracted", extra={"data": {
+                "image":        image_path,
+                "slot":         partition["slot"],
+                "inode":        inode,
+                "image_path":   entry["path"],
+                "extracted_to": extract_path,
+                "size":         len(file_bytes),
+                "sha256":       hashlib.sha256(file_bytes).hexdigest(),
+                "deleted":      entry["deleted"],
+            }})
+
+            # Run the same keyword rules as extract_artifacts() on the
+            # extracted file's text content. Source uses the extracted path
+            # so verify_hypothesis() receives a real filesystem path.
+            text = file_bytes.decode(errors="ignore")
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                source = f"{extract_path}:{lineno}"
+                low    = line.lower()
+                if "password" in low:
+                    artifacts.append(("credential_hint", source, line))
+                if "cmd.exe" in low or "powershell" in low:
+                    artifacts.append(("suspicious_execution", source, line))
+                if "http://" in low or "https://" in low:
+                    artifacts.append(("network_indicator", source, line))
+                if "net user" in low:
+                    artifacts.append(("account_creation", source, line))
+                if _B64_RE.search(line):
+                    artifacts.append(("base64_payload", source, line))
+
+    logger.info("disk_image_complete", extra={"data": {
+        "image":          image_path,
+        "artifact_count": len(artifacts),
     }})
     return artifacts
 
@@ -303,6 +557,17 @@ def _run_tool(cmd, timeout=30):
         return "", f"tool not found: {cmd[0]}", 127
     except subprocess.TimeoutExpired:
         return "", "timeout", 1
+
+
+def _run_tool_binary(cmd, timeout=30):
+    """Like _run_tool but returns stdout as raw bytes (required for icat)."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=timeout)
+        return r.stdout, r.stderr.decode(errors="ignore"), r.returncode
+    except FileNotFoundError:
+        return b"", f"tool not found: {cmd[0]}", 127
+    except subprocess.TimeoutExpired:
+        return b"", "timeout", 1
 
 
 def verify_hypothesis(hypothesis):
