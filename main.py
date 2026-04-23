@@ -1,3 +1,4 @@
+import ipaddress
 import os
 import hashlib
 import json
@@ -69,6 +70,41 @@ def ingest_evidence(path):
 # ----------------------------
 _B64_RE = re.compile(r'(?:[A-Za-z0-9+/]{4}){8,}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?')
 
+# Matches ISO-like timestamps (group 1) or syslog-style (group 2)
+_TS_RE = re.compile(
+    r'(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)'
+    r'|([A-Za-z]{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})'
+)
+_IP_RE = re.compile(r'\b(\d{1,3}(?:\.\d{1,3}){3})\b')
+
+
+def _parse_ts(line):
+    """Return a UTC-aware datetime from a log line, or None if no timestamp found."""
+    m = _TS_RE.search(line)
+    if not m:
+        return None
+    if m.group(1):
+        ts = m.group(1).rstrip("Z")
+        try:
+            dt = datetime.fromisoformat(ts)
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    if m.group(2):
+        try:
+            dt = datetime.strptime(f"{datetime.now().year} {m.group(2)}", "%Y %b %d %H:%M:%S")
+            return dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return None
+
+
+def _is_rfc1918(ip_str):
+    try:
+        return ipaddress.ip_address(ip_str).is_private
+    except ValueError:
+        return False
+
 
 def extract_artifacts(evidence):
     logger.info("extract_start", extra={"data": {"file_count": len(evidence)}})
@@ -83,22 +119,22 @@ def extract_artifacts(evidence):
             low = line.lower()
 
             if "password" in low:
-                artifacts.append(("credential_hint", source))
+                artifacts.append(("credential_hint", source, line))
 
             if "cmd.exe" in low or "powershell" in low:
-                artifacts.append(("suspicious_execution", source))
+                artifacts.append(("suspicious_execution", source, line))
 
             if "http://" in low or "https://" in low:
-                artifacts.append(("network_indicator", source))
+                artifacts.append(("network_indicator", source, line))
 
             if "net user" in low:
-                artifacts.append(("account_creation", source))
+                artifacts.append(("account_creation", source, line))
 
             if _B64_RE.search(line):
-                artifacts.append(("base64_payload", source))
+                artifacts.append(("base64_payload", source, line))
 
     by_type = {}
-    for atype, _ in artifacts:
+    for atype, _, __ in artifacts:
         by_type[atype] = by_type.get(atype, 0) + 1
     logger.info("extract_complete", extra={"data": {
         "artifact_count": len(artifacts),
@@ -116,9 +152,18 @@ def normalize_timeline(artifacts):
     t0 = time.monotonic()
     timeline = []
 
-    for i, (atype, source) in enumerate(artifacts):
+    for atype, source, line in artifacts:
+        ts = _parse_ts(line)
+        if ts is None:
+            # Fall back to the source file's mtime so events from the same file
+            # at least sort consistently relative to one another.
+            file_path = source.rsplit(":", 1)[0]
+            try:
+                ts = datetime.fromtimestamp(os.path.getmtime(file_path), tz=timezone.utc)
+            except OSError:
+                ts = datetime.fromtimestamp(0, tz=timezone.utc)
         timeline.append({
-            "time": datetime.now(timezone.utc).isoformat(),
+            "time": ts.isoformat(),
             "event_type": atype,
             "source": source
         })
@@ -306,6 +351,19 @@ def verify_hypothesis(hypothesis):
             grep_hits.append({"pattern": pattern, "matches": matches})
             evidence_found.append(f"grep '{pattern}': {matches}")
     tool_outputs["grep"] = grep_hits
+
+    # 3b. Classify any IP addresses found in grep matches
+    all_ips = [ip for hit in grep_hits for m in hit["matches"] for ip in _IP_RE.findall(m)]
+    if all_ips:
+        internal = [ip for ip in all_ips if _is_rfc1918(ip)]
+        external = [ip for ip in all_ips if not _is_rfc1918(ip)]
+        if external:
+            evidence_found.append(f"ip_classification: external IPs {external} — potential C2/exfiltration target")
+        if internal:
+            note = "RFC 1918 — lateral movement / internal staging"
+            if any(k in claim for k in ("c2", "exfiltration", "outbound", "beacon")):
+                note += " (claim characterises as external C2, but address is internal)"
+            evidence_found.append(f"ip_classification: internal IPs {internal} — {note}")
 
     # 4. xxd — hex dump; useful for obfuscated or binary artifacts
     stdout, _, _ = _run_tool(["xxd", file_path])
