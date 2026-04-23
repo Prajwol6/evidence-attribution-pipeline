@@ -2,6 +2,7 @@ import os
 import hashlib
 import json
 import logging
+import re
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -66,6 +67,9 @@ def ingest_evidence(path):
 # ----------------------------
 # 2. ARTIFACT EXTRACTION
 # ----------------------------
+_B64_RE = re.compile(r'(?:[A-Za-z0-9+/]{4}){8,}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?')
+
+
 def extract_artifacts(evidence):
     logger.info("extract_start", extra={"data": {"file_count": len(evidence)}})
     t0 = time.monotonic()
@@ -74,15 +78,24 @@ def extract_artifacts(evidence):
     for item in evidence:
         data = item["data"].decode(errors="ignore")
 
-        # simple heuristic extraction
-        if "password" in data.lower():
-            artifacts.append(("credential_hint", item["path"]))
+        for lineno, line in enumerate(data.splitlines(), start=1):
+            source = f"{item['path']}:{lineno}"
+            low = line.lower()
 
-        if "cmd.exe" in data.lower() or "powershell" in data.lower():
-            artifacts.append(("suspicious_execution", item["path"]))
+            if "password" in low:
+                artifacts.append(("credential_hint", source))
 
-        if "http://" in data.lower() or "https://" in data.lower():
-            artifacts.append(("network_indicator", item["path"]))
+            if "cmd.exe" in low or "powershell" in low:
+                artifacts.append(("suspicious_execution", source))
+
+            if "http://" in low or "https://" in low:
+                artifacts.append(("network_indicator", source))
+
+            if "net user" in low:
+                artifacts.append(("account_creation", source))
+
+            if _B64_RE.search(line):
+                artifacts.append(("base64_payload", source))
 
     by_type = {}
     for atype, _ in artifacts:
@@ -250,15 +263,18 @@ def _run_tool(cmd, timeout=30):
 def verify_hypothesis(hypothesis):
     claim = hypothesis["claim"].lower()
     source = hypothesis["support"]
+    # source may be "path:lineno" — strip the line number to get the actual file path
+    parts = source.rsplit(":", 1)
+    file_path = parts[0] if len(parts) == 2 and parts[1].isdigit() else source
     tool_outputs = {}
     evidence_found = []
 
     # 1. file — identify the file type before deeper analysis
-    stdout, _, _ = _run_tool(["file", source])
+    stdout, _, _ = _run_tool(["file", file_path])
     tool_outputs["file"] = stdout.strip()
 
     # 2. strings — pull printable sequences; catches IOCs in binaries too
-    stdout, _, _ = _run_tool(["strings", source])
+    stdout, _, _ = _run_tool(["strings", file_path])
     tool_outputs["strings"] = stdout
     strings_lower = stdout.lower()
 
@@ -284,7 +300,7 @@ def verify_hypothesis(hypothesis):
 
     grep_hits = []
     for pattern in grep_patterns:
-        stdout, _, rc = _run_tool(["grep", "-iEo", pattern, source])
+        stdout, _, rc = _run_tool(["grep", "-iEo", pattern, file_path])
         if rc == 0 and stdout.strip():
             matches = list(dict.fromkeys(stdout.strip().splitlines()))  # dedupe
             grep_hits.append({"pattern": pattern, "matches": matches})
@@ -292,7 +308,7 @@ def verify_hypothesis(hypothesis):
     tool_outputs["grep"] = grep_hits
 
     # 4. xxd — hex dump; useful for obfuscated or binary artifacts
-    stdout, _, _ = _run_tool(["xxd", source])
+    stdout, _, _ = _run_tool(["xxd", file_path])
     tool_outputs["xxd_head"] = stdout[:1024]
 
     verified = len(evidence_found) > 0

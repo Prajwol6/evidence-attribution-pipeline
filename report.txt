@@ -1,13 +1,16 @@
 === FORENSIC REPORT ===
 
-- FINDING: Suspicious process execution observed in Windows event log, potentially indicating malware or unauthorized command execution on the host.
-  SOURCE: evidence/windows_event.log
+- FINDING: Suspicious process execution with outbound network activity indicates possible C2 beaconing from the Windows host.
+  SOURCE: evidence/windows_event.log:1
 
-- FINDING: Network indicator in Windows event log suggests outbound C2 communication or data exfiltration attempt following the suspicious execution.
-  SOURCE: evidence/windows_event.log
+- FINDING: A second suspicious execution event suggests follow-on payload or lateral tooling being launched.
+  SOURCE: evidence/windows_event.log:2
 
-- FINDING: Near-simultaneous suspicious execution logged in test.log indicates a coordinated or scripted attack affecting multiple logging sources.
-  SOURCE: evidence/test.log
+- FINDING: Unauthorized account creation shortly after suspicious execution suggests attacker persistence establishment.
+  SOURCE: evidence/windows_event.log:3
 
-- FINDING: Network indicator in test.log correlates with the execution event, supporting the hypothesis of malware beaconing or lateral movement activity.
-  SOURCE: evidence/test.log
+- FINDING: Suspicious execution recorded in test.log indicates potential secondary compromise or testing artifact related to the incident.
+  SOURCE: evidence/test.log:1
+
+- FINDING: Network indicator correlated with the test.log execution suggests data exfiltration or external callback activity.
+  SOURCE: evidence/test.log:1
