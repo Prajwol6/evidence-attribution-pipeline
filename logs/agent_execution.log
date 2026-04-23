@@ -65,3 +65,35 @@
 {"timestamp": "2026-04-23T16:46:53.757801+00:00", "level": "WARNING", "step": "llm_reason_retry", "data": {"attempt": 1, "max_retries": 3, "error": "hypotheses list is empty", "raw_output": "{\"hypotheses\": []}"}}
 {"timestamp": "2026-04-23T16:46:53.757863+00:00", "level": "WARNING", "step": "llm_reason_retry", "data": {"attempt": 2, "max_retries": 3, "error": "hypotheses list is empty", "raw_output": "{\"hypotheses\": []}"}}
 {"timestamp": "2026-04-23T16:46:53.757913+00:00", "level": "WARNING", "step": "llm_reason_retry", "data": {"attempt": 3, "max_retries": 3, "error": "hypotheses list is empty", "raw_output": "{\"hypotheses\": []}"}}
+{"timestamp": "2026-04-23T16:54:37.970362+00:00", "level": "INFO", "step": "pipeline_start"}
+{"timestamp": "2026-04-23T16:54:37.970479+00:00", "level": "INFO", "step": "ingest_start", "data": {"path": "evidence/"}}
+{"timestamp": "2026-04-23T16:54:37.971061+00:00", "level": "INFO", "step": "ingest_complete", "data": {"file_count": 4, "total_bytes": 256, "duration_s": 0.001}}
+{"timestamp": "2026-04-23T16:54:37.971116+00:00", "level": "INFO", "step": "extract_start", "data": {"file_count": 4}}
+{"timestamp": "2026-04-23T16:54:37.971168+00:00", "level": "INFO", "step": "extract_complete", "data": {"artifact_count": 4, "by_type": {"suspicious_execution": 2, "network_indicator": 2}, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T16:54:37.971195+00:00", "level": "INFO", "step": "normalize_start", "data": {"artifact_count": 4}}
+{"timestamp": "2026-04-23T16:54:37.971232+00:00", "level": "INFO", "step": "normalize_complete", "data": {"event_count": 4, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T16:54:37.971254+00:00", "level": "INFO", "step": "llm_reason_start", "data": {"event_count": 4}}
+{"timestamp": "2026-04-23T16:55:09.631211+00:00", "level": "INFO", "step": "pipeline_start"}
+{"timestamp": "2026-04-23T16:55:09.631323+00:00", "level": "INFO", "step": "ingest_start", "data": {"path": "evidence/"}}
+{"timestamp": "2026-04-23T16:55:09.631529+00:00", "level": "INFO", "step": "ingest_complete", "data": {"file_count": 4, "total_bytes": 256, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T16:55:09.631569+00:00", "level": "INFO", "step": "extract_start", "data": {"file_count": 4}}
+{"timestamp": "2026-04-23T16:55:09.631612+00:00", "level": "INFO", "step": "extract_complete", "data": {"artifact_count": 4, "by_type": {"suspicious_execution": 2, "network_indicator": 2}, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T16:55:09.631641+00:00", "level": "INFO", "step": "normalize_start", "data": {"artifact_count": 4}}
+{"timestamp": "2026-04-23T16:55:09.631678+00:00", "level": "INFO", "step": "normalize_complete", "data": {"event_count": 4, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T16:55:09.631701+00:00", "level": "INFO", "step": "llm_reason_start", "data": {"event_count": 4}}
+{"timestamp": "2026-04-23T16:56:16.749868+00:00", "level": "INFO", "step": "pipeline_start"}
+{"timestamp": "2026-04-23T16:56:16.749971+00:00", "level": "INFO", "step": "ingest_start", "data": {"path": "evidence/"}}
+{"timestamp": "2026-04-23T16:56:16.750340+00:00", "level": "INFO", "step": "ingest_complete", "data": {"file_count": 4, "total_bytes": 256, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T16:56:16.750401+00:00", "level": "INFO", "step": "extract_start", "data": {"file_count": 4}}
+{"timestamp": "2026-04-23T16:56:16.750444+00:00", "level": "INFO", "step": "extract_complete", "data": {"artifact_count": 4, "by_type": {"suspicious_execution": 2, "network_indicator": 2}, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T16:56:16.750471+00:00", "level": "INFO", "step": "normalize_start", "data": {"artifact_count": 4}}
+{"timestamp": "2026-04-23T16:56:16.750508+00:00", "level": "INFO", "step": "normalize_complete", "data": {"event_count": 4, "duration_s": 0.0}}
+{"timestamp": "2026-04-23T16:56:16.750529+00:00", "level": "INFO", "step": "llm_reason_start", "data": {"event_count": 4}}
+{"timestamp": "2026-04-23T16:56:21.153327+00:00", "level": "INFO", "step": "llm_reason_complete", "data": {"attempt": 1, "hypothesis_count": 4, "input_tokens": 656, "output_tokens": 264, "total_tokens": 920, "duration_s": 4.403}}
+{"timestamp": "2026-04-23T16:56:21.182691+00:00", "level": "INFO", "step": "verify_hypothesis", "data": {"claim": "Suspicious process execution observed in Windows event log, potentially indicating malware or unauthorized command execution on the host.", "support": "evidence/windows_event.log", "file_type": "evidence/windows_event.log: ASCII text", "grep_hits": 2, "evidence_found": ["strings: found 'powershell'", "strings: found 'cmd.exe'", "strings: found 'http://'", "grep 'powershell': ['powershell']", "grep 'cmd\\.exe': ['cmd.exe']"], "verified": true}}
+{"timestamp": "2026-04-23T16:56:21.211050+00:00", "level": "INFO", "step": "verify_hypothesis", "data": {"claim": "Network indicator in Windows event log suggests outbound C2 communication or data exfiltration attempt following the suspicious execution.", "support": "evidence/windows_event.log", "file_type": "evidence/windows_event.log: ASCII text", "grep_hits": 3, "evidence_found": ["strings: found 'powershell'", "strings: found 'cmd.exe'", "strings: found 'http://'", "grep 'powershell': ['powershell']", "grep 'cmd\\.exe': ['cmd.exe']", "grep 'https?://[^\\s]+': ['http://192.168.1.100/payload.p']"], "verified": true}}
+{"timestamp": "2026-04-23T16:56:21.233555+00:00", "level": "INFO", "step": "verify_hypothesis", "data": {"claim": "Near-simultaneous suspicious execution logged in test.log indicates a coordinated or scripted attack affecting multiple logging sources.", "support": "evidence/test.log", "file_type": "evidence/test.log: ASCII text", "grep_hits": 1, "evidence_found": ["strings: found 'powershell'", "strings: found 'http://'", "grep 'powershell': ['powershell']"], "verified": true}}
+{"timestamp": "2026-04-23T16:56:21.255635+00:00", "level": "INFO", "step": "verify_hypothesis", "data": {"claim": "Network indicator in test.log correlates with the execution event, supporting the hypothesis of malware beaconing or lateral movement activity.", "support": "evidence/test.log", "file_type": "evidence/test.log: ASCII text", "grep_hits": 2, "evidence_found": ["strings: found 'powershell'", "strings: found 'http://'", "grep 'powershell': ['powershell']", "grep 'https?://[^\\s]+': ['http://evil.com']"], "verified": true}}
+{"timestamp": "2026-04-23T16:56:21.255714+00:00", "level": "INFO", "step": "report_start", "data": {"verified_count": 4}}
+{"timestamp": "2026-04-23T16:56:21.256266+00:00", "level": "INFO", "step": "report_complete", "data": {"output_path": "report.txt"}}
+{"timestamp": "2026-04-23T16:56:21.256432+00:00", "level": "INFO", "step": "pipeline_complete", "data": {"verified_findings": 4, "total_duration_s": 4.507}}
