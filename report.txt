@@ -1,19 +1,13 @@
 === FORENSIC REPORT ===
 
-- FINDING: Initial suspicious execution with network activity indicates possible malware download or C2 beaconing during early morning hours
-  SOURCE: evidence/test.log:1
-
-- FINDING: Network indicator coinciding with suspicious execution suggests outbound connection to attacker infrastructure
-  SOURCE: evidence/test.log:1
-
-- FINDING: Suspicious process execution on Windows host initiated network communication, possibly indicating remote payload retrieval or lateral movement
+- FINDING: Initial compromise via suspicious execution with outbound network communication, indicating possible malware with C2 callback
   SOURCE: evidence/windows_event.log:1
 
-- FINDING: Network indicator at same timestamp as execution points to command-and-control channel establishment
-  SOURCE: evidence/windows_event.log:1
-
-- FINDING: Follow-up suspicious execution 4 seconds later suggests a multi-stage attack or secondary payload deployment
+- FINDING: Follow-up suspicious process execution suggests post-exploitation activity or secondary payload deployment
   SOURCE: evidence/windows_event.log:2
 
-- FINDING: Account creation shortly after suspicious executions indicates potential persistence mechanism via rogue user account
+- FINDING: Unauthorized account creation indicates attacker establishing persistence after initial execution
   SOURCE: evidence/windows_event.log:3
+
+- FINDING: Later suspicious execution with network indicator approximately 10 hours after initial compromise suggests continued attacker activity or scheduled C2 beaconing
+  SOURCE: evidence/test.log:1

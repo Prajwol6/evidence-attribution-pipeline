@@ -194,6 +194,82 @@ _TS_RE = re.compile(
 )
 _IP_RE = re.compile(r'\b(\d{1,3}(?:\.\d{1,3}){3})\b')
 
+# ----------------------------
+# CONTEXT CLASSIFIER
+# ----------------------------
+# Keyword hits inside license headers, comment blocks, or docstrings are a
+# major source of false positives.  Both extract_artifacts() and
+# verify_hypothesis() use _classify_context() to demote those matches before
+# they reach the LLM or the report.
+
+_LICENSE_MARKERS = (
+    "copyright",            "all rights reserved",
+    "permission is hereby", "licensed under",
+    "spdx-license",         "apache license",
+    "mit license",          "gnu general public",
+    "bsd license",          "this software is provided",
+    "subject to the terms",
+)
+
+_COMMENT_PREFIXES = ("#", "//", "/*", "*/", "*", "<!--", ";", "--", "%", "'")
+
+_DOC_PATTERNS = (
+    '"""', "'''", "@param", "@return", "@throws",
+    ":param", ":returns:", ":raises:", ".. note::", ".. warning::",
+)
+
+
+def _is_documentation_line(line):
+    """True if a line looks like a comment, docstring, or license-header text."""
+    stripped = line.strip()
+    if not stripped:
+        return False
+    if stripped.startswith(_COMMENT_PREFIXES):
+        return True
+    low = stripped.lower()
+    if low.startswith("rem "):            # batch-file comment
+        return True
+    if any(marker in low for marker in _LICENSE_MARKERS):
+        return True
+    if any(marker in stripped for marker in _DOC_PATTERNS):
+        return True
+    return False
+
+
+def _classify_context(lines, idx, window=2):
+    """
+    Classify the context around ``lines[idx]``.
+
+    Returns one of:
+      - "documentation": the line itself is a comment/license/doc line, or a
+        majority of the surrounding window is.  Matches here are likely
+        false positives (e.g. the word "password" appearing in a comment
+        example).
+      - "operational":   nearby lines carry a timestamp or IP address, which
+        is a strong signal of real runtime/log evidence.
+      - "neutral":       neither documentation nor operational — treat as a
+        plain match.
+    """
+    if idx < 0 or idx >= len(lines):
+        return "neutral"
+
+    if _is_documentation_line(lines[idx]):
+        return "documentation"
+
+    start   = max(0, idx - window)
+    end     = min(len(lines), idx + window + 1)
+    context = lines[start:end]
+
+    doc_count = sum(1 for l in context if _is_documentation_line(l))
+    if doc_count > len(context) // 2:
+        return "documentation"
+
+    for l in context:
+        if _TS_RE.search(l) or _IP_RE.search(l):
+            return "operational"
+
+    return "neutral"
+
 
 def _parse_ts(line):
     """Return a UTC-aware datetime from a log line, or None if no timestamp found."""
@@ -223,10 +299,55 @@ def _is_rfc1918(ip_str):
         return False
 
 
+def _extract_keyword_artifacts(text, source_prefix, artifacts):
+    """
+    Apply context-aware keyword/pattern rules over ``text``.
+
+    For each candidate line we classify its surrounding context with
+    _classify_context().  Keyword hits inside documentation/comment/license
+    context are dropped (a "password" appearing in a comment example is not
+    forensic evidence).  Base64 blobs are an exception — obfuscated payloads
+    are still interesting when embedded inside comments.
+
+    Returns the number of lines suppressed for caller-side logging.
+    """
+    lines     = text.splitlines()
+    suppressed = 0
+
+    for lineno, line in enumerate(lines, start=1):
+        source = f"{source_prefix}:{lineno}"
+        low    = line.lower()
+        ctx    = _classify_context(lines, lineno - 1)
+
+        if ctx == "documentation":
+            # Keyword hits in docs are noise; base64 payloads aren't.
+            if _B64_RE.search(line):
+                artifacts.append(("base64_payload", source, line))
+            if ("password" in low or "cmd.exe" in low or "powershell" in low
+                    or "http://" in low or "https://" in low
+                    or "net user" in low):
+                suppressed += 1
+            continue
+
+        if "password" in low:
+            artifacts.append(("credential_hint", source, line))
+        if "cmd.exe" in low or "powershell" in low:
+            artifacts.append(("suspicious_execution", source, line))
+        if "http://" in low or "https://" in low:
+            artifacts.append(("network_indicator", source, line))
+        if "net user" in low:
+            artifacts.append(("account_creation", source, line))
+        if _B64_RE.search(line):
+            artifacts.append(("base64_payload", source, line))
+
+    return suppressed
+
+
 def extract_artifacts(evidence):
     logger.info("extract_start", extra={"data": {"file_count": len(evidence)}})
     t0 = time.monotonic()
     artifacts = []
+    total_suppressed = 0
 
     for item in evidence:
         if item.get("is_memory_dump"):
@@ -242,33 +363,16 @@ def extract_artifacts(evidence):
             continue
 
         data = item["data"].decode(errors="ignore")
-
-        for lineno, line in enumerate(data.splitlines(), start=1):
-            source = f"{item['path']}:{lineno}"
-            low = line.lower()
-
-            if "password" in low:
-                artifacts.append(("credential_hint", source, line))
-
-            if "cmd.exe" in low or "powershell" in low:
-                artifacts.append(("suspicious_execution", source, line))
-
-            if "http://" in low or "https://" in low:
-                artifacts.append(("network_indicator", source, line))
-
-            if "net user" in low:
-                artifacts.append(("account_creation", source, line))
-
-            if _B64_RE.search(line):
-                artifacts.append(("base64_payload", source, line))
+        total_suppressed += _extract_keyword_artifacts(data, item["path"], artifacts)
 
     by_type = {}
     for atype, _, __ in artifacts:
         by_type[atype] = by_type.get(atype, 0) + 1
     logger.info("extract_complete", extra={"data": {
-        "artifact_count": len(artifacts),
-        "by_type": by_type,
-        "duration_s": round(time.monotonic() - t0, 3),
+        "artifact_count":        len(artifacts),
+        "by_type":               by_type,
+        "doc_context_suppressed": total_suppressed,
+        "duration_s":            round(time.monotonic() - t0, 3),
     }})
     return artifacts
 
@@ -456,23 +560,11 @@ def extract_disk_image_artifacts(item):
                 "deleted":      entry["deleted"],
             }})
 
-            # Run the same keyword rules as extract_artifacts() on the
-            # extracted file's text content. Source uses the extracted path
-            # so verify_hypothesis() receives a real filesystem path.
+            # Run the same context-aware keyword rules as extract_artifacts()
+            # on the extracted file's text content. Source uses the extracted
+            # path so verify_hypothesis() receives a real filesystem path.
             text = file_bytes.decode(errors="ignore")
-            for lineno, line in enumerate(text.splitlines(), start=1):
-                source = f"{extract_path}:{lineno}"
-                low    = line.lower()
-                if "password" in low:
-                    artifacts.append(("credential_hint", source, line))
-                if "cmd.exe" in low or "powershell" in low:
-                    artifacts.append(("suspicious_execution", source, line))
-                if "http://" in low or "https://" in low:
-                    artifacts.append(("network_indicator", source, line))
-                if "net user" in low:
-                    artifacts.append(("account_creation", source, line))
-                if _B64_RE.search(line):
-                    artifacts.append(("base64_payload", source, line))
+            _extract_keyword_artifacts(text, extract_path, artifacts)
 
     logger.info("disk_image_complete", extra={"data": {
         "image":          image_path,
@@ -484,6 +576,29 @@ def extract_disk_image_artifacts(item):
 # ----------------------------
 # 2c. MEMORY DUMP ARTIFACT EXTRACTION  (Volatility3)
 # ----------------------------
+# Volatility3 stderr fragments that indicate the dump's symbol tables
+# (ISF JSON files) are missing or do not match the kernel build.  Treated
+# specially so the operator gets an actionable hint instead of a silent skip.
+_VOL3_SYMBOL_ERROR_PATTERNS = (
+    "unsatisfied requirement",
+    "symbol table",
+    "isf file",
+    "no suitable address space",
+    "kernel.symbol_table_name",
+    "kernel.layer_name",
+    "no kernel modules",
+    "could not locate",
+    "no symbol",
+)
+
+
+def _is_symbol_table_error(stderr):
+    if not stderr:
+        return False
+    low = stderr.lower()
+    return any(p in low for p in _VOL3_SYMBOL_ERROR_PATTERNS)
+
+
 def _parse_vol_csv(output):
     """
     Parse Volatility3 --renderer csv output into a list of row dicts.
@@ -637,6 +752,31 @@ def extract_memory_artifacts(item):
             proc_rows, pslist_raw    = rows, raw
             pid_f, ppid_f, name_f   = pf, ppf, nf
             break
+
+        # Plugin failed (rc != 0) or returned no rows.  Previously this was
+        # a silent skip — now we surface the underlying reason so missing
+        # symbol tables can be diagnosed without re-running Volatility by hand.
+        if _is_symbol_table_error(stderr):
+            logger.warning("memory_dump_symbol_table_missing", extra={"data": {
+                "image":   image_path,
+                "plugin":  plugin,
+                "os":      os_name,
+                "rc":      rc,
+                "stderr":  stderr.strip()[:1000],
+                "hint":    "Volatility3 could not locate matching symbol tables (ISF "
+                           "files) for this dump. Install the matching symbol pack "
+                           "(e.g. volatility3-symbols) or place ISF JSON files under "
+                           "volatility3/symbols/ — "
+                           "see https://volatility3.readthedocs.io/en/latest/symbol-tables.html",
+            }})
+        else:
+            logger.warning("memory_dump_plugin_failed", extra={"data": {
+                "image":  image_path,
+                "plugin": plugin,
+                "os":     os_name,
+                "rc":     rc,
+                "stderr": stderr.strip()[:1000],
+            }})
 
     if not detected_os:
         logger.warning("memory_dump_os_undetected", extra={"data": {
@@ -1279,6 +1419,15 @@ def _run_tool_binary(cmd, timeout=30):
         return b"", "timeout", 1
 
 
+def _read_file_lines(file_path):
+    """Read a file as text lines for context analysis. Empty list on any error."""
+    try:
+        with open(file_path, "r", errors="ignore") as fh:
+            return fh.read().splitlines()
+    except (OSError, IsADirectoryError):
+        return []
+
+
 def verify_hypothesis(hypothesis):
     claim = hypothesis["claim"].lower()
     source = hypothesis["support"]
@@ -1287,6 +1436,12 @@ def verify_hypothesis(hypothesis):
     file_path = parts[0] if len(parts) == 2 and parts[1].isdigit() else source
     tool_outputs = {}
     evidence_found = []
+    weak_evidence  = []
+
+    # Pull the file's text lines once so every match can be checked against
+    # its surrounding context.  Empty for binaries or missing files — those
+    # fall back to the strings-only path (treated as neutral, not demoted).
+    file_lines = _read_file_lines(file_path)
 
     # 1. file — identify the file type before deeper analysis
     stdout, _, _ = _run_tool(["file", file_path])
@@ -1303,10 +1458,24 @@ def verify_hypothesis(hypothesis):
         "password", "passwd", "credential", "secret",
     ]
     for kw in ioc_keywords:
-        if kw in strings_lower:
-            evidence_found.append(f"strings: found '{kw}'")
+        if kw not in strings_lower:
+            continue
+        # Demote the hit if every in-file occurrence is in documentation
+        # context.  When the keyword shows up in `strings` but not in the
+        # text view (binary-only), there's no context to check — keep it.
+        if file_lines:
+            hit_indices = [i for i, l in enumerate(file_lines) if kw in l.lower()]
+            if hit_indices and all(
+                _classify_context(file_lines, i) == "documentation"
+                for i in hit_indices
+            ):
+                weak_evidence.append(f"strings: '{kw}' only in documentation context")
+                continue
+        evidence_found.append(f"strings: found '{kw}'")
 
-    # 3. grep — targeted regex patterns keyed to the hypothesis claim
+    # 3. grep — targeted regex patterns keyed to the hypothesis claim.
+    # -inE keeps line numbers and full matching lines so we can check
+    # whether each hit sits inside a comment / license / docstring.
     grep_patterns = []
     if any(k in claim for k in ("execution", "powershell", "cmd", "process", "command", "script")):
         grep_patterns += [r"powershell", r"cmd\.exe", r"cmd /[a-z]", r"/bin/(sh|bash)", r"\bexec\b"]
@@ -1319,15 +1488,51 @@ def verify_hypothesis(hypothesis):
 
     grep_hits = []
     for pattern in grep_patterns:
-        stdout, _, rc = _run_tool(["grep", "-iEo", pattern, file_path])
-        if rc == 0 and stdout.strip():
-            matches = list(dict.fromkeys(stdout.strip().splitlines()))  # dedupe
-            grep_hits.append({"pattern": pattern, "matches": matches})
-            evidence_found.append(f"grep '{pattern}': {matches}")
+        stdout, _, rc = _run_tool(["grep", "-inE", pattern, file_path])
+        if rc != 0 or not stdout.strip():
+            continue
+
+        strong_matches = []
+        weak_matches   = []
+        seen           = set()  # dedupe (lineno, text)
+        for hit_line in stdout.splitlines():
+            sep = hit_line.find(":")
+            if sep < 0:
+                continue
+            try:
+                hit_lineno = int(hit_line[:sep])
+            except ValueError:
+                continue
+            match_text = hit_line[sep + 1:].strip()[:200]
+            key = (hit_lineno, match_text)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            if file_lines and _classify_context(file_lines, hit_lineno - 1) == "documentation":
+                weak_matches.append({"line": hit_lineno, "text": match_text})
+            else:
+                strong_matches.append({"line": hit_lineno, "text": match_text})
+
+        if strong_matches:
+            grep_hits.append({"pattern": pattern, "matches": strong_matches})
+            evidence_found.append(
+                f"grep '{pattern}': {[m['text'] for m in strong_matches]}"
+            )
+        if weak_matches:
+            weak_evidence.append(
+                f"grep '{pattern}': {len(weak_matches)} match(es) in "
+                f"documentation/comment/license context — confidence reduced"
+            )
     tool_outputs["grep"] = grep_hits
 
-    # 3b. Classify any IP addresses found in grep matches
-    all_ips = [ip for hit in grep_hits for m in hit["matches"] for ip in _IP_RE.findall(m)]
+    # 3b. Classify any IP addresses found in (strong) grep matches.
+    all_ips = [
+        ip
+        for hit in grep_hits
+        for m in hit["matches"]
+        for ip in _IP_RE.findall(m["text"])
+    ]
     if all_ips:
         internal = [ip for ip in all_ips if _is_rfc1918(ip)]
         external = [ip for ip in all_ips if not _is_rfc1918(ip)]
@@ -1343,22 +1548,29 @@ def verify_hypothesis(hypothesis):
     stdout, _, _ = _run_tool(["xxd", file_path])
     tool_outputs["xxd_head"] = stdout[:1024]
 
+    # Verification requires at least one strong (non-documentation) match.
+    # A file whose only matches sit inside a license header or comment block
+    # is no longer enough to confirm a hypothesis.
     verified = len(evidence_found) > 0
 
     logger.info("verify_hypothesis", extra={"data": {
-        "claim": hypothesis["claim"],
-        "support": source,
-        "file_type": tool_outputs["file"],
-        "grep_hits": len(grep_hits),
-        "evidence_found": evidence_found,
-        "verified": verified,
+        "claim":           hypothesis["claim"],
+        "support":         source,
+        "file_type":       tool_outputs["file"],
+        "grep_hits":       sum(len(h["matches"]) for h in grep_hits),
+        "strong_evidence": len(evidence_found),
+        "weak_evidence":   len(weak_evidence),
+        "evidence_found":  evidence_found,
+        "weak_matches":    weak_evidence,
+        "verified":        verified,
     }})
 
     if not verified:
         logger.warning("verify_hypothesis_failed", extra={"data": {
-            "claim": hypothesis["claim"],
-            "support": source,
-            "file_type": tool_outputs["file"],
+            "claim":         hypothesis["claim"],
+            "support":       source,
+            "file_type":     tool_outputs["file"],
+            "weak_evidence": weak_evidence,
         }})
 
     return verified
